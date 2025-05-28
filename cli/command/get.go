@@ -2,10 +2,10 @@ package command
 
 import (
 	"context"
-	"dmitysh/dropper/internal/filedrop"
-	"dmitysh/dropper/internal/service"
 	"errors"
 	"fmt"
+	"github.com/dmitysh/dropper/internal/filedrop"
+	"github.com/dmitysh/dropper/internal/service"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"

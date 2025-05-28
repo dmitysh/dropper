@@ -1,4 +1,4 @@
-module dmitysh/dropper
+module github.com/dmitysh/dropper
 
 go 1.20
 

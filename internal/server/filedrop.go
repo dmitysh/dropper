@@ -2,11 +2,11 @@ package server
 
 import (
 	"context"
-	"dmitysh/dropper/internal/filedrop"
-	"dmitysh/dropper/internal/pathutils"
-	"dmitysh/dropper/internal/service"
 	"fmt"
 	"github.com/alexsergivan/transliterator"
+	"github.com/dmitysh/dropper/internal/filedrop"
+	"github.com/dmitysh/dropper/internal/pathutils"
+	"github.com/dmitysh/dropper/internal/service"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

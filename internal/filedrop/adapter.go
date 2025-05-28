@@ -1,7 +1,7 @@
 package filedrop
 
 import (
-	"dmitysh/dropper/internal/entity"
+	"github.com/dmitysh/dropper/internal/entity"
 )
 
 type StreamSender struct {

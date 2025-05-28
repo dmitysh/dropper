@@ -1,13 +1,13 @@
 package command
 
 import (
-	"dmitysh/dropper/internal/filedrop"
-	"dmitysh/dropper/internal/pathutils"
-	"dmitysh/dropper/internal/server"
-	"dmitysh/dropper/internal/server/grpcutils"
-	"dmitysh/dropper/internal/service"
 	"errors"
 	"fmt"
+	"github.com/dmitysh/dropper/internal/filedrop"
+	"github.com/dmitysh/dropper/internal/pathutils"
+	"github.com/dmitysh/dropper/internal/server"
+	"github.com/dmitysh/dropper/internal/server/grpcutils"
+	"github.com/dmitysh/dropper/internal/service"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"

@@ -1,6 +1,6 @@
 package service
 
-import "dmitysh/dropper/internal/entity"
+import "github.com/dmitysh/dropper/internal/entity"
 
 type SendFile interface {
 	SendFileByChunks(filepath string, fileSender ChunkSender) error

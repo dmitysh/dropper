@@ -1,8 +1,8 @@
 package main
 
 import (
-	"dmitysh/dropper/cli/command"
-	"dmitysh/dropper/configs/envconfig"
+	"github.com/dmitysh/dropper/cli/command"
+	"github.com/dmitysh/dropper/configs/envconfig"
 	"github.com/spf13/cobra"
 	"os"
 )
