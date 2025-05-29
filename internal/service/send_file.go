@@ -5,58 +5,51 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
-	"math/rand"
 	"os"
 	"sync"
 )
 
 var (
-	FileAlreadyRequestedErr = errors.New("file already requested")
-	TransferFileErr         = errors.New("error during file transfer")
+	ErrFileAlreadyRequested = errors.New("file already requested")
 )
 
+type ChunkSender interface {
+	Send(b []byte) error
+}
+
 type SendFileService struct {
-	secretCode    int
-	fileDropMu    sync.Mutex
-	fileDropped   bool
+	once          sync.Once
 	fileChunkSize int
 }
 
 func NewSendFileService(fileChunkSize int) *SendFileService {
-	secretCode := rand.Intn(maxSecretCode-minSecretCode+1) + minSecretCode
 	return &SendFileService{
 		fileChunkSize: fileChunkSize,
-		secretCode:    secretCode,
 	}
 }
 
 func (f *SendFileService) SendFileByChunks(filepath string, fileSender ChunkSender) error {
-	f.fileDropMu.Lock()
-	if f.fileDropped {
-		f.fileDropMu.Unlock()
-		return FileAlreadyRequestedErr
-	} else {
-		f.fileDropped = true
-		f.fileDropMu.Unlock()
+	isFirstAttempt := false
+	var sendErr error
+
+	f.once.Do(func() {
+		if err := f.sendFile(filepath, fileSender); err != nil {
+			sendErr = err
+		}
+		isFirstAttempt = true
+	})
+
+	if !isFirstAttempt {
+		return ErrFileAlreadyRequested
 	}
 
-	if sendErr := f.sendFile(filepath, fileSender); sendErr != nil {
-		log.Println("can't send file:", sendErr)
-		f.fileDropMu.Lock()
-		f.fileDropped = false
-		f.fileDropMu.Unlock()
-
-		return TransferFileErr
-	}
-
-	return nil
+	return sendErr
 }
 
 func (f *SendFileService) sendFile(filepath string, fileSender ChunkSender) error {
-	file, openErr := os.Open(filepath)
-	if openErr != nil {
-		return fmt.Errorf("can't open file: %w", openErr)
+	file, err := os.Open(filepath)
+	if err != nil {
+		return fmt.Errorf("can't open file: %w", err)
 	}
 	defer file.Close()
 
@@ -64,17 +57,17 @@ func (f *SendFileService) sendFile(filepath string, fileSender ChunkSender) erro
 	buf := make([]byte, f.fileChunkSize)
 
 	for {
-		n, readChunkErr := reader.Read(buf)
-		if errors.Is(readChunkErr, io.EOF) {
+		n, err := reader.Read(buf)
+		if errors.Is(err, io.EOF) {
 			break
 		}
-
-		if readChunkErr != nil {
-			return fmt.Errorf("can't read chunk: %w", readChunkErr)
+		if err != nil {
+			return fmt.Errorf("can't read chunk: %w", err)
 		}
 
-		if sendErr := fileSender.Send(buf[:n]); sendErr != nil {
-			return fmt.Errorf("can't send chunk: %w", sendErr)
+		err = fileSender.Send(buf[:n])
+		if err != nil {
+			return fmt.Errorf("can't send chunk: %w", err)
 		}
 	}
 

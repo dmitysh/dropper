@@ -2,14 +2,9 @@ package grpcutils
 
 import (
 	"fmt"
-	"github.com/dmitysh/dropper/internal/server"
-	"google.golang.org/grpc"
-	"log"
 	"net"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
+
+	"google.golang.org/grpc"
 )
 
 type GRPCServerConfig struct {
@@ -17,24 +12,20 @@ type GRPCServerConfig struct {
 	Port int
 }
 
-func RunAndShutdownServer(serverCfg GRPCServerConfig, grpcServer *grpc.Server, fileDropServer *server.FileDropServer) error {
-	listener, listenErr := net.Listen("tcp",
-		fmt.Sprintf("%s:%d", serverCfg.Host, serverCfg.Port))
-	if listenErr != nil {
-		return fmt.Errorf("can't listen: %w", listenErr)
+func RunAndShutdownServer(serverCfg GRPCServerConfig, grpcServer *grpc.Server, doneCh <-chan struct{}) error {
+	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", serverCfg.Host, serverCfg.Port))
+	if err != nil {
+		return fmt.Errorf("can't listen: %w", err)
 	}
 	defer listener.Close()
 
-	signal.Notify(fileDropServer.StopCh, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
-		<-fileDropServer.StopCh
-		time.Sleep(time.Millisecond * 500)
-		log.Println("stop sharing")
+		<-doneCh
 		grpcServer.GracefulStop()
 	}()
 
 	if serveErr := grpcServer.Serve(listener); serveErr != nil {
-		return fmt.Errorf("sharing error: %w", serveErr)
+		return serveErr
 	}
 
 	return nil

@@ -1,9 +1,5 @@
 package filedrop
 
-import (
-	"github.com/dmitysh/dropper/internal/entity"
-)
-
 type StreamSender struct {
 	gRPCFileStream FileDrop_GetFileServer
 }
@@ -12,7 +8,7 @@ func NewStreamSender(fileStream FileDrop_GetFileServer) *StreamSender {
 	return &StreamSender{gRPCFileStream: fileStream}
 }
 
-func (s *StreamSender) Send(chunk entity.FileChunk) error {
+func (s *StreamSender) Send(chunk []byte) error {
 	return s.gRPCFileStream.Send(&FileRequest{ChunkData: chunk})
 }
 
@@ -24,10 +20,10 @@ func NewStreamReceiver(fileStream FileDrop_GetFileClient) *StreamReceiver {
 	return &StreamReceiver{gRPCFileStream: fileStream}
 }
 
-func (s *StreamReceiver) Receive() (entity.FileChunk, error) {
+func (s *StreamReceiver) Receive() ([]byte, error) {
 	fileChunk, recvErr := s.gRPCFileStream.Recv()
 	if recvErr != nil {
-		return entity.FileChunk{}, recvErr
+		return nil, recvErr
 	}
 
 	return fileChunk.GetChunkData(), nil

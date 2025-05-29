@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	fp "path/filepath"
@@ -11,23 +12,27 @@ var (
 	IncorrectMetaErr = errors.New("incorrect meta")
 )
 
-type GetFileService struct {
+type ChunkReceiver interface {
+	Receive() ([]byte, error)
+	Meta() (map[string]string, error)
 }
+
+type GetFileService struct{}
 
 func NewGetFileService() *GetFileService {
 	return &GetFileService{}
 }
 
 func (f *GetFileService) ReceiveAndSaveFileByChunks(fileReceiver ChunkReceiver, path string) error {
-	md, mdErr := checkAndGetMeta(fileReceiver)
-	if mdErr != nil {
-		return mdErr
+	md, err := checkAndGetMeta(fileReceiver)
+	if err != nil {
+		return err
 	}
 
 	filepath := fp.Join(path, md["filename"])
-	file, createErr := os.Create(filepath)
-	if createErr != nil {
-		return createErr
+	file, err := os.Create(filepath)
+	if err != nil {
+		return fmt.Errorf("can't create file: %w", err)
 	}
 
 	success := false
@@ -41,17 +46,17 @@ func (f *GetFileService) ReceiveAndSaveFileByChunks(fileReceiver ChunkReceiver, 
 	}()
 
 	for {
-		fileChunk, recvErr := fileReceiver.Receive()
-		if errors.Is(recvErr, io.EOF) {
+		fileChunk, err := fileReceiver.Receive()
+		if errors.Is(err, io.EOF) {
 			break
 		}
-		if recvErr != nil {
-			return recvErr
+		if err != nil {
+			return fmt.Errorf("can't receive chunk: %w", err)
 		}
 
-		_, writeErr := file.Write(fileChunk)
-		if writeErr != nil {
-			return writeErr
+		_, err = file.Write(fileChunk)
+		if err != nil {
+			return fmt.Errorf("can't write chunk: %w", err)
 		}
 	}
 

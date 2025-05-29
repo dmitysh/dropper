@@ -3,45 +3,39 @@ package server
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+
 	"github.com/alexsergivan/transliterator"
 	"github.com/dmitysh/dropper/internal/filedrop"
 	"github.com/dmitysh/dropper/internal/pathutils"
+	"github.com/dmitysh/dropper/internal/pkg/logger"
 	"github.com/dmitysh/dropper/internal/service"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"log"
-	"os"
-	"path/filepath"
-	"sync"
 )
 
 var (
-	IncorrectCodeErr = status.Error(codes.InvalidArgument, "secure code is incorrect")
+	ErrIncorrectCode = status.Error(codes.InvalidArgument, "secure code is incorrect")
 )
-
-const maxIncorrectCodesAttempts = 2
 
 type FileDropServer struct {
 	filedrop.UnimplementedFileDropServer
-	fileTransferService   service.SendFile
-	codeService           service.SecureCode
-	filepath              string
-	StopCh                chan os.Signal
-	incorrectCodeAttempts int
-	codeMu                sync.Mutex
-	incorrectRequests     int
+	fileTransferService *service.SendFileService
+	codeService         *service.SecureCodeService
+	filepath            string
+
+	TransferDone chan struct{}
 }
 
-func NewFileDropServer(fileTransferService service.SendFile, codeService service.SecureCode,
-	filepath string, stopCh chan os.Signal) *FileDropServer {
+func NewFileDropServer(filepath string, fileTransferService *service.SendFileService, codeService *service.SecureCodeService) *FileDropServer {
 	return &FileDropServer{
 		fileTransferService: fileTransferService,
-		StopCh:              stopCh,
-		filepath:            filepath,
 		codeService:         codeService,
+		filepath:            filepath,
+		TransferDone:        make(chan struct{}),
 	}
 }
 
@@ -50,63 +44,53 @@ func (f *FileDropServer) Ping(context.Context, *empty.Empty) (*empty.Empty, erro
 }
 
 func (f *FileDropServer) GetFile(_ *emptypb.Empty, fileStream filedrop.FileDrop_GetFileServer) error {
+	ctx := fileStream.Context()
+	defer close(f.TransferDone)
+
 	var fullFilepath string
 	if pathutils.CheckPathType(f.filepath) == pathutils.Folder {
-		fullFilepath = f.filepath + ".zip"
+		fullFilepath = f.filepath + pathutils.ZipArchiveExt
 	} else {
 		fullFilepath = f.filepath
 	}
 
 	trans := transliterator.NewTransliterator(nil)
-	sendHeaderErr := fileStream.SendHeader(metadata.New(map[string]string{"filename": trans.Transliterate(filepath.Base(fullFilepath), "en")}))
-	if sendHeaderErr != nil {
-		log.Println(sendHeaderErr)
-		return status.Error(codes.Internal, fmt.Sprintf("can't send header: %v", sendHeaderErr))
+	err := fileStream.SendHeader(metadata.New(map[string]string{"filename": trans.Transliterate(filepath.Base(fullFilepath), "en")}))
+	if err != nil {
+		return status.Error(codes.Internal, fmt.Sprintf("can't send header: %v", err))
 	}
 
-	if checkSecretCodeErr := f.checkSecretCode(fileStream.Context()); checkSecretCodeErr != nil {
-		log.Println(checkSecretCodeErr)
-		return checkSecretCodeErr
+	err = f.checkSecretCode(ctx)
+	if err != nil {
+		logger.Err(ctx, "file was requested with invalid code")
+		return err
 	}
 
-	log.Println("file requested")
+	logger.Info(ctx, "file requested")
 
 	streamSender := filedrop.NewStreamSender(fileStream)
 	if sendFileErr := f.fileTransferService.SendFileByChunks(fullFilepath, streamSender); sendFileErr != nil {
-		log.Println(sendFileErr)
 		return status.Error(codes.Internal, sendFileErr.Error())
 	}
 
-	log.Println("file transferred")
-	f.StopCh <- os.Interrupt
+	logger.Info(ctx, "file transferred")
 
 	return nil
 }
 
-func (f *FileDropServer) checkSecretCode(mdCtx context.Context) error {
-	md, ok := metadata.FromIncomingContext(mdCtx)
+func (f *FileDropServer) checkSecretCode(ctx context.Context) error {
+	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return status.Error(codes.InvalidArgument, "no meta provided")
 	}
 
 	dropCodeMeta := md.Get("drop-code")
 	if len(dropCodeMeta) != 1 {
-		return IncorrectCodeErr
+		return ErrIncorrectCode
 	}
 
-	codeOk := f.codeService.CheckDropCode(dropCodeMeta[0])
-
-	f.codeMu.Lock()
-	defer f.codeMu.Unlock()
-
-	if !codeOk {
-		f.incorrectCodeAttempts++
-		if f.incorrectCodeAttempts > maxIncorrectCodesAttempts && len(f.StopCh) == 0 {
-			f.StopCh <- os.Interrupt
-			return IncorrectCodeErr
-		}
-
-		return IncorrectCodeErr
+	if !f.codeService.CodeValid(dropCodeMeta[0]) {
+		return ErrIncorrectCode
 	}
 
 	return nil
