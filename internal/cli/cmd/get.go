@@ -33,11 +33,13 @@ const (
 )
 
 var (
-	getFilePath string
+	getFilePath      string
+	getEncryptionKey string
 )
 
 func init() {
 	getCmd.Flags().StringVarP(&getFilePath, getFilePathVarName, "p", ".", "Path where to save file")
+	getCmd.Flags().StringVar(&getEncryptionKey, "key", "", "AES256 encryption key")
 }
 
 var getCmd = &cobra.Command{
@@ -47,8 +49,6 @@ var getCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := cmd.Context()
-
-		fileGetterService := service.NewGetFileService()
 
 		dropCode, err := strconv.Atoi(args[0])
 		if err != nil {
@@ -72,8 +72,9 @@ var getCmd = &cobra.Command{
 			logger.Fatalf(ctx, "can't get file stream: %v", err)
 		}
 
+		fileGetterService := service.NewGetFileService(getFilePath, getEncryptionKey)
 		streamReceiver := filedrop.NewStreamReceiver(fileStream)
-		err = fileGetterService.ReceiveAndSaveFileByChunks(streamReceiver, getFilePath)
+		err = fileGetterService.ReceiveAndSaveFileByChunks(streamReceiver)
 		if err != nil {
 			if status.Code(err) == codes.InvalidArgument {
 				logger.Fatal(ctx, "invalid code")

@@ -2,6 +2,7 @@ package service
 
 import (
 	"bufio"
+	"crypto/cipher"
 	"errors"
 	"fmt"
 	"io"
@@ -20,11 +21,13 @@ type ChunkSender interface {
 type SendFileService struct {
 	once          sync.Once
 	fileChunkSize int
+	ctrStream     cipher.Stream
 }
 
-func NewSendFileService(fileChunkSize int) *SendFileService {
+func NewSendFileService(fileChunkSize int, ctrStream cipher.Stream) *SendFileService {
 	return &SendFileService{
 		fileChunkSize: fileChunkSize,
+		ctrStream:     ctrStream,
 	}
 }
 
@@ -65,7 +68,13 @@ func (f *SendFileService) sendFile(filepath string, fileSender ChunkSender) erro
 			return fmt.Errorf("can't read chunk: %w", err)
 		}
 
-		err = fileSender.Send(buf[:n])
+		chunk := buf[:n]
+		if f.ctrStream != nil {
+			chunk = make([]byte, n)
+			f.ctrStream.XORKeyStream(chunk, buf[:n])
+		}
+
+		err = fileSender.Send(chunk)
 		if err != nil {
 			return fmt.Errorf("can't send chunk: %w", err)
 		}

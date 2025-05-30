@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"path/filepath"
 
@@ -25,16 +26,19 @@ type FileDropServer struct {
 	filedrop.UnimplementedFileDropServer
 	fileTransferService *service.SendFileService
 	codeService         *service.SecureCodeService
-	filepath            string
+
+	filepath string
+	iv       []byte
 
 	TransferDone chan struct{}
 }
 
-func NewFileDropServer(filepath string, fileTransferService *service.SendFileService, codeService *service.SecureCodeService) *FileDropServer {
+func NewFileDropServer(filepath string, iv []byte, fileTransferService *service.SendFileService, codeService *service.SecureCodeService) *FileDropServer {
 	return &FileDropServer{
 		fileTransferService: fileTransferService,
 		codeService:         codeService,
 		filepath:            filepath,
+		iv:                  iv,
 		TransferDone:        make(chan struct{}),
 	}
 }
@@ -55,8 +59,12 @@ func (f *FileDropServer) GetFile(_ *emptypb.Empty, fileStream filedrop.FileDrop_
 	}
 
 	trans := transliterator.NewTransliterator(nil)
-	err := fileStream.SendHeader(metadata.New(map[string]string{"filename": trans.Transliterate(filepath.Base(fullFilepath), "en")}))
+	err := fileStream.SendHeader(metadata.New(map[string]string{
+		"filename": trans.Transliterate(filepath.Base(fullFilepath), "en"),
+		"iv":       base64.StdEncoding.EncodeToString(f.iv),
+	}))
 	if err != nil {
+		logger.Errf(ctx, "can't send metadata: %v", err)
 		return status.Error(codes.Internal, fmt.Sprintf("can't send header: %v", err))
 	}
 

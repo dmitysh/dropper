@@ -3,6 +3,9 @@ package cmd
 import (
 	"archive/zip"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +33,14 @@ const (
 var (
 	ErrIncorrectPath = errors.New("path to file/folder is not correct")
 )
+
+var (
+	dropEncryptionKey string
+)
+
+func init() {
+	dropCmd.Flags().StringVar(&dropEncryptionKey, "key", "", "AES256 encryption key")
+}
 
 var dropCmd = &cobra.Command{
 	Use:   "drop",
@@ -61,9 +72,14 @@ var dropCmd = &cobra.Command{
 			pathToFile = path
 		}
 
-		fileSenderService := service.NewSendFileService(defaultChunkSize)
+		stream, iv, err := initAES256CTR(dropEncryptionKey)
+		if err != nil {
+			logger.Fatalf(ctx, "can't init ctr stream: %v", err)
+		}
+
+		fileSenderService := service.NewSendFileService(defaultChunkSize, stream)
 		codeService := service.NewSecureCodeService()
-		fileDropServer := server.NewFileDropServer(pathToFile, fileSenderService, codeService)
+		fileDropServer := server.NewFileDropServer(pathToFile, iv, fileSenderService, codeService)
 
 		var opts []grpc.ServerOption
 		grpcServer := grpc.NewServer(opts...)
@@ -77,7 +93,7 @@ var dropCmd = &cobra.Command{
 
 		logger.Infof(ctx, "your drop code: %s", codeService.GenerateCode(ctx))
 
-		err := grpcutils.RunAndShutdownServer(serverCfg, grpcServer, fileDropServer.TransferDone)
+		err = grpcutils.RunAndShutdownServer(serverCfg, grpcServer, fileDropServer.TransferDone)
 		if err != nil {
 			logger.Fatalf(ctx, "can't serve: %v", err)
 		}
@@ -143,4 +159,24 @@ func compressFolderToTmpArchive(ctx context.Context, path string) (s string, err
 	}
 
 	return tmpDirPath, nil
+}
+
+func initAES256CTR(encryptionKey string) (cipher.Stream, []byte, error) {
+	if encryptionKey == "" {
+		return nil, nil, nil
+	}
+
+	block, err := aes.NewCipher([]byte(encryptionKey))
+	if err != nil {
+		return nil, nil, fmt.Errorf("can't create cypher: %w", err)
+	}
+
+	iv := make([]byte, aes.BlockSize)
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return nil, nil, fmt.Errorf("can't create iv: %w", err)
+	}
+
+	stream := cipher.NewCTR(block, iv)
+
+	return stream, iv, nil
 }
